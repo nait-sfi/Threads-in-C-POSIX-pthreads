@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Threads in C — POSIX pthreads</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:       #08090b;
+  --surface:  #0f1117;
+  --surface2: #161b24;
+  --surface3: #1c2230;
+  --border:   rgba(255,255,255,0.06);
+  --border2:  rgba(255,255,255,0.12);
+  --text:     #dce3ef;
+  --muted:    #5a6478;
+  --muted2:   #8492a6;
+  --blue:     #60a5fa;
+  --cyan:     #22d3ee;
+  --green:    #4ade80;
+  --amber:    #fbbf24;
+  --red:      #f87171;
+  --purple:   #c084fc;
+  --pink:     #f472b6;
+  --mono:     'IBM Plex Mono', monospace;
+  --sans:     'IBM Plex Sans', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* scanline texture */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.08) 2px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* diagonal grid */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(96,165,250,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96,165,250,0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.wrapper {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 2rem 8rem;
+}
+
+/* ── HEADER ─────────────────────────────────────── */
+header {
+  padding: 5rem 0 3.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+  position: relative;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.eyebrow::before {
+  content: '';
+  width: 24px;
+  height: 1px;
+  background: var(--blue);
+}
+
+header h1 {
+  font-size: clamp(2.6rem, 6vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin-bottom: 1.25rem;
+}
+header h1 .accent { color: var(--blue); }
+header h1 .dim    { color: var(--muted); font-weight: 300; }
+
+.subtitle {
+  font-size: 16px;
+  color: var(--muted2);
+  max-width: 560px;
+  font-weight: 300;
+  line-height: 1.65;
+}
+
+.header-meta {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  flex-wrap: wrap;
+}
+.hm-chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hm-chip span { color: var(--blue); }
+
+/* ── NAV ─────────────────────────────────────────── */
+nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(8,9,11,0.9);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  margin-bottom: 0;
+}
+nav ul {
+  list-style: none;
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+nav ul::-webkit-scrollbar { display: none; }
+nav a {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 12px 16px;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  transition: color 0.2s, background 0.2s;
+}
+nav a:hover { color: var(--blue); background: rgba(96,165,250,0.05); }
+nav li:first-child a { border-left: 1px solid var(--border); }
+
+/* ── SECTIONS ────────────────────────────────────── */
+section {
+  padding: 3.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sec-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+
+h2 {
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin-bottom: 1.25rem;
+  color: var(--text);
+}
+
+h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.6rem;
+  color: var(--text);
+}
+
+p { color: var(--muted2); margin-bottom: 1rem; font-size: 14px; line-height: 1.75; }
+p:last-child { margin-bottom: 0; }
+strong { color: var(--text); font-weight: 500; }
+
+/* ── CARDS ────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+.card-blue  { border-left: 2px solid var(--blue); }
+.card-cyan  { border-left: 2px solid var(--cyan); }
+.card-green { border-left: 2px solid var(--green); }
+.card-amber { border-left: 2px solid var(--amber); }
+.card-red   { border-left: 2px solid var(--red); }
+.card-purple{ border-left: 2px solid var(--purple); }
+
+/* ── CODE ─────────────────────────────────────────── */
+.code-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 1.25rem 0;
+}
+.code-header {
+  background: var(--surface2);
+  padding: 8px 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.code-header .lang {
+  background: var(--surface3);
+  color: var(--blue);
+  padding: 1px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+}
+pre { padding: 1.5rem; overflow-x: auto; }
+pre code {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.75;
+  color: #cdd6f4;
+}
+.kw { color: #cba6f7; }
+.ty { color: #89b4fa; }
+.fn { color: #a6e3a1; }
+.cm { color: #45475a; font-style: italic; }
+.num { color: #fab387; }
+.str { color: #a6e3a1; }
+.pp { color: #f38ba8; }
+.op { color: #89dceb; }
+
+/* ── CALLOUTS ─────────────────────────────────────── */
+.callout {
+  border-left: 2px solid;
+  border-radius: 0 4px 4px 0;
+  padding: 1rem 1.25rem;
+  margin: 1.25rem 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.callout code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+.callout-blue   { border-color: var(--blue);   background: rgba(96,165,250,0.06);  color: #93c5fd; }
+.callout-cyan   { border-color: var(--cyan);   background: rgba(34,211,238,0.06);  color: #67e8f9; }
+.callout-green  { border-color: var(--green);  background: rgba(74,222,128,0.06);  color: #86efac; }
+.callout-amber  { border-color: var(--amber);  background: rgba(251,191,36,0.06);  color: #fcd34d; }
+.callout-red    { border-color: var(--red);    background: rgba(248,113,113,0.06); color: #fca5a5; }
+.callout-purple { border-color: var(--purple); background: rgba(192,132,252,0.06); color: #d8b4fe; }
+.callout-blue   code { color: var(--blue); }
+.callout-amber  code { color: var(--amber); }
+.callout-red    code { color: var(--red); }
+.callout-green  code { color: var(--green); }
+.callout-purple code { color: var(--purple); }
+
+/* ── BADGES ────────────────────────────────────────── */
+.badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
+}
+.b-blue   { background: rgba(96,165,250,0.15);  color: var(--blue);   border: 1px solid rgba(96,165,250,0.25); }
+.b-green  { background: rgba(74,222,128,0.12);  color: var(--green);  border: 1px solid rgba(74,222,128,0.22); }
+.b-amber  { background: rgba(251,191,36,0.12);  color: var(--amber);  border: 1px solid rgba(251,191,36,0.22); }
+.b-red    { background: rgba(248,113,113,0.12); color: var(--red);    border: 1px solid rgba(248,113,113,0.22); }
+.b-purple { background: rgba(192,132,252,0.12); color: var(--purple); border: 1px solid rgba(192,132,252,0.22); }
+.b-gray   { background: var(--surface2); color: var(--muted2); border: 1px solid var(--border); }
+
+/* ── GRIDS ─────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 1.25rem 0; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 1.25rem 0; }
+
+/* ── FUNCTION CARDS ────────────────────────────────── */
+.fn-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.25rem;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.fn-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+.fn-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+.fn-name { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--green); }
+.fn-sig  { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.fn-body { font-size: 13px; color: var(--muted2); line-height: 1.6; }
+.fn-body code { font-family: var(--mono); font-size: 11px; background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 2px; color: var(--cyan); }
+.fn-ret  { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.fn-ret span { color: var(--amber); }
+
+/* ── FLOW ──────────────────────────────────────────── */
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 1rem 0; }
+.fs {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 2px;
+  border: 1px solid;
+}
+.fs-blue   { background: rgba(96,165,250,0.08);  color: var(--blue);   border-color: rgba(96,165,250,0.2); }
+.fs-cyan   { background: rgba(34,211,238,0.08);  color: var(--cyan);   border-color: rgba(34,211,238,0.2); }
+.fs-green  { background: rgba(74,222,128,0.08);  color: var(--green);  border-color: rgba(74,222,128,0.2); }
+.fs-amber  { background: rgba(251,191,36,0.08);  color: var(--amber);  border-color: rgba(251,191,36,0.2); }
+.fs-red    { background: rgba(248,113,113,0.08); color: var(--red);    border-color: rgba(248,113,113,0.2); }
+.fs-purple { background: rgba(192,132,252,0.08); color: var(--purple); border-color: rgba(192,132,252,0.2); }
+.fs-gray   { background: var(--surface2); color: var(--muted2); border-color: var(--border); }
+.fa { color: var(--muted); font-size: 14px; padding: 0 2px; }
+
+/* ── TABLE ─────────────────────────────────────────── */
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; margin: 1.25rem 0; }
+.tbl th { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 500; }
+.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--muted2); vertical-align: top; }
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tr:hover td { background: rgba(255,255,255,0.015); }
+.tbl .tc-fn  { font-family: var(--mono); font-size: 12px; color: var(--green); white-space: nowrap; }
+.tbl .tc-ret { font-family: var(--mono); font-size: 11px; color: var(--amber); }
+
+/* ── THREAD DIAGRAM ─────────────────────────────────── */
+.thread-diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1.5rem; overflow-x: auto; margin: 1.25rem 0; }
+
+/* ── INLINE CODE ─────────────────────────────────────── */
+code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 6px;
+  border-radius: 2px;
+  color: var(--cyan);
+}
+
+/* ── DIVIDER ─────────────────────────────────────────── */
+.divider { height: 1px; background: var(--border); margin: 1.5rem 0; }
+
+/* ── RACE / MUTEX VISUAL ─────────────────────────────── */
+.race-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 1.25rem 0; }
+@media (max-width:580px) { .race-grid { grid-template-columns: 1fr; } }
+.race-card { background: var(--surface); border: 1px solid; border-radius: 4px; overflow: hidden; }
+.race-card .rh { padding: 8px 14px; font-family: var(--mono); font-size: 11px; font-weight: 600; border-bottom: 1px solid; }
+.race-danger .rh { color: var(--red); background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.2); }
+.race-safe .rh   { color: var(--green); background: rgba(74,222,128,0.06); border-color: rgba(74,222,128,0.15); }
+.race-danger { border-color: rgba(248,113,113,0.2); }
+.race-safe   { border-color: rgba(74,222,128,0.18); }
+.race-body { padding: 1rem; }
+.timeline-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; font-family: var(--mono); font-size: 11px; }
+.t-label { min-width: 64px; color: var(--muted); }
+.t-step { padding: 3px 8px; border-radius: 2px; }
+.t1 { background: rgba(96,165,250,0.12); color: var(--blue); }
+.t2 { background: rgba(192,132,252,0.12); color: var(--purple); }
+.t-conflict { background: rgba(248,113,113,0.15); color: var(--red); }
+.t-safe     { background: rgba(74,222,128,0.1);  color: var(--green); }
+.t-locked   { background: rgba(251,191,36,0.12); color: var(--amber); }
+
+/* ── FOOTER ───────────────────────────────────────── */
+footer {
+  padding: 2rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  border-top: 1px solid var(--border);
+}
+footer p { font-family: var(--mono); font-size: 12px; color: var(--muted); margin: 0; }
+
+@media (max-width: 640px) {
+  header h1 { font-size: 2.2rem; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+<!-- ══ HEADER ══════════════════════════════════════════ -->
+<header>
+  <div class="eyebrow">POSIX · pthreads · Concurrency</div>
+  <h1>
+    <span class="dim">Threads</span><br>
+    <span class="accent">in C</span>
+  </h1>
+  <p class="subtitle">
+    A deep-dive into POSIX threads — how they're created, how they run under the hood,
+    and how mutexes protect shared state from race conditions.
+  </p>
+  <div class="header-meta">
+    <div class="hm-chip"><span>−lpthread</span> compile flag</div>
+    <div class="hm-chip"><span>#include</span> &lt;pthread.h&gt;</div>
+    <div class="hm-chip"><span>OS</span> Linux / macOS</div>
+    <div class="hm-chip"><span>Standard</span> POSIX.1-2001</div>
+  </div>
+</header>
+
+<!-- ══ NAV ════════════════════════════════════════════ -->
+<nav>
+  <ul>
+    <li><a href="#what">What is a thread</a></li>
+    <li><a href="#under-hood">Under the hood</a></li>
+    <li><a href="#creation">Thread creation</a></li>
+    <li><a href="#lifecycle">Lifecycle</a></li>
+    <li><a href="#race">Race conditions</a></li>
+    <li><a href="#mutex">Mutexes</a></li>
+    <li><a href="#fn-ref">Function ref</a></li>
+    <li><a href="#patterns">Patterns</a></li>
+    <li><a href="#full-code">Full code</a></li>
+  </ul>
+</nav>
+
+<!-- ══ 01 — WHAT IS A THREAD ══════════════════════════ -->
+<section id="what">
+  <div class="sec-label">01</div>
+  <h2>What is a thread?</h2>
+
+  <p>A <strong>thread</strong> is the smallest unit of execution scheduled by the operating system. Every process has at least one thread (the main thread). Additional threads share the same virtual address space — the same code, heap, and global variables — but each has its own <strong>stack</strong>, <strong>program counter</strong>, and <strong>register set</strong>.</p>
+
+  <div class="thread-diagram">
+    <svg viewBox="0 0 760 260" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Process box -->
+      <rect x="20" y="20" width="720" height="230" rx="4" fill="rgba(15,17,23,0.8)" stroke="rgba(96,165,250,0.2)" stroke-width="1"/>
+      <text x="36" y="42" font-family="IBM Plex Mono,monospace" font-size="11" fill="rgba(96,165,250,0.6)" letter-spacing="0.1em">PROCESS</text>
+
+      <!-- Shared zone -->
+      <rect x="36" y="52" width="688" height="60" rx="3" fill="rgba(34,211,238,0.05)" stroke="rgba(34,211,238,0.15)" stroke-width="1"/>
+      <text x="52" y="72" font-family="IBM Plex Mono,monospace" font-size="10" fill="rgba(34,211,238,0.5)" letter-spacing="0.1em">SHARED MEMORY</text>
+      <rect x="60"  y="80" width="110" height="22" rx="2" fill="rgba(34,211,238,0.08)" stroke="rgba(34,211,238,0.2)" stroke-width="1"/>
+      <text x="115" y="95" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#67e8f9">code (.text)</text>
+      <rect x="185" y="80" width="110" height="22" rx="2" fill="rgba(34,211,238,0.08)" stroke="rgba(34,211,238,0.2)" stroke-width="1"/>
+      <text x="240" y="95" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#67e8f9">heap</text>
+      <rect x="310" y="80" width="110" height="22" rx="2" fill="rgba(34,211,238,0.08)" stroke="rgba(34,211,238,0.2)" stroke-width="1"/>
+      <text x="365" y="95" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#67e8f9">globals</text>
+      <rect x="435" y="80" width="110" height="22" rx="2" fill="rgba(34,211,238,0.08)" stroke="rgba(34,211,238,0.2)" stroke-width="1"/>
+      <text x="490" y="95" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#67e8f9">file descriptors</text>
+
+      <!-- Thread boxes -->
+      <rect x="36"  y="128" width="150" height="106" rx="3" fill="rgba(96,165,250,0.06)" stroke="rgba(96,165,250,0.25)" stroke-width="1"/>
+      <text x="111" y="148" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" font-weight="600" fill="#60a5fa">Thread 1</text>
+      <text x="111" y="165" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="rgba(96,165,250,0.5)">(main)</text>
+      <text x="52"  y="184" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">stack ████████</text>
+      <text x="52"  y="200" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">PC  → 0x4021a0</text>
+      <text x="52"  y="216" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">registers</text>
+
+      <rect x="202" y="128" width="150" height="106" rx="3" fill="rgba(192,132,252,0.06)" stroke="rgba(192,132,252,0.25)" stroke-width="1"/>
+      <text x="277" y="148" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" font-weight="600" fill="#c084fc">Thread 2</text>
+      <text x="218" y="184" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">stack ████████</text>
+      <text x="218" y="200" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">PC  → 0x4023f0</text>
+      <text x="218" y="216" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">registers</text>
+
+      <rect x="368" y="128" width="150" height="106" rx="3" fill="rgba(74,222,128,0.05)" stroke="rgba(74,222,128,0.2)" stroke-width="1"/>
+      <text x="443" y="148" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" font-weight="600" fill="#4ade80">Thread 3</text>
+      <text x="384" y="184" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">stack ████████</text>
+      <text x="384" y="200" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">PC  → 0x402510</text>
+      <text x="384" y="216" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">registers</text>
+
+      <rect x="534" y="128" width="170" height="106" rx="3" fill="rgba(251,191,36,0.05)" stroke="rgba(251,191,36,0.18)" stroke-width="1"/>
+      <text x="619" y="148" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" font-weight="600" fill="#fbbf24">Thread N</text>
+      <text x="550" y="184" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">stack ████████</text>
+      <text x="550" y="200" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">PC  → ...</text>
+      <text x="550" y="216" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5a6478">registers</text>
+    </svg>
+    <p style="text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:0.75rem">Each thread owns its stack + PC + registers · All threads share code, heap, globals</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card card-blue">
+      <h3>Threads vs Processes</h3>
+      <p>A new <strong>process</strong> gets a full copy of the address space (expensive — <code>fork()</code> uses copy-on-write). A new <strong>thread</strong> shares the existing address space, making creation and context-switching much cheaper.</p>
+    </div>
+    <div class="card card-cyan">
+      <h3>Why use threads?</h3>
+      <p>Parallelism on multi-core CPUs, responsive UIs (background work while main thread listens), I/O concurrency (one thread blocks on disk, others run), and simpler structure than event-loop callbacks.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 02 — UNDER THE HOOD ═════════════════════════════ -->
+<section id="under-hood">
+  <div class="sec-label">02</div>
+  <h2>Under the hood</h2>
+
+  <p>On Linux, <code>pthread_create()</code> ultimately calls the <code>clone()</code> syscall — the same syscall used by <code>fork()</code>, but with flags that tell the kernel to <strong>share</strong> the address space, file descriptors, and signal handlers instead of copying them.</p>
+
+  <div class="card card-blue">
+    <h3>What the kernel does when you create a thread</h3>
+    <div class="flow">
+      <span class="fs fs-blue">pthread_create()</span>
+      <span class="fa">→</span>
+      <span class="fs fs-cyan">glibc wrapper</span>
+      <span class="fa">→</span>
+      <span class="fs fs-purple">clone() syscall</span>
+      <span class="fa">→</span>
+      <span class="fs fs-amber">kernel: new task_struct</span>
+      <span class="fa">→</span>
+      <span class="fs fs-green">scheduler picks it up</span>
+    </div>
+    <p style="margin-top:1rem">The kernel creates a new <code>task_struct</code> (same structure it uses for processes). The new thread gets its own kernel stack, its own stack in user space (typically 8 MB, allocated by pthreads), and a <strong>Thread Control Block (TCB)</strong> that stores its ID, stack pointer, and attributes.</p>
+  </div>
+
+  <div class="grid-2" style="margin-top:1rem">
+    <div class="card">
+      <h3>Scheduling</h3>
+      <p>The OS scheduler treats each thread as an independent unit. On a multi-core machine, two threads from the same process can literally run simultaneously on different cores. On a single core they interleave — the scheduler preempts one thread and resumes another based on time slices.</p>
+    </div>
+    <div class="card">
+      <h3>Context switching</h3>
+      <p>When the scheduler switches between threads, it saves the current thread's registers (including the program counter and stack pointer) into its TCB, then loads the next thread's saved state. This is why each thread needs its own registers and stack.</p>
+    </div>
+  </div>
+
+  <div class="callout callout-amber">
+    <strong>The scheduler is non-deterministic.</strong> You cannot predict the exact order threads will execute. Two runs of the same program can interleave differently. This is the root cause of race conditions and why synchronization exists.
+  </div>
+
+  <h3 style="margin-top:1.5rem">Memory layout of a threaded process</h3>
+  <div class="thread-diagram">
+    <svg viewBox="0 0 700 200" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="addr" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(96,165,250,0.15)"/>
+          <stop offset="100%" stop-color="rgba(96,165,250,0.02)"/>
+        </linearGradient>
+      </defs>
+      <!-- Address arrow -->
+      <line x1="30" y1="20" x2="30" y2="185" stroke="rgba(96,165,250,0.3)" stroke-width="1"/>
+      <text x="22" y="18" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(96,165,250,0.5)" text-anchor="middle">HIGH</text>
+      <text x="22" y="190" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(96,165,250,0.5)" text-anchor="middle">LOW</text>
+      <polygon points="30,16 27,24 33,24" fill="rgba(96,165,250,0.4)"/>
+      <!-- Memory segments -->
+      <rect x="50" y="20" width="580" height="28" rx="2" fill="rgba(248,113,113,0.1)" stroke="rgba(248,113,113,0.25)" stroke-width="1"/>
+      <text x="340" y="38" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#f87171">Stack — Thread 1 (main)</text>
+      <rect x="50" y="54" width="580" height="22" rx="2" fill="rgba(192,132,252,0.1)" stroke="rgba(192,132,252,0.22)" stroke-width="1"/>
+      <text x="340" y="69" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#c084fc">Stack — Thread 2  (8 MB each, allocated by pthreads)</text>
+      <rect x="50" y="82" width="580" height="22" rx="2" fill="rgba(74,222,128,0.08)" stroke="rgba(74,222,128,0.18)" stroke-width="1"/>
+      <text x="340" y="97" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#4ade80">Stack — Thread 3</text>
+      <rect x="50" y="110" width="580" height="22" rx="2" fill="rgba(34,211,238,0.08)" stroke="rgba(34,211,238,0.18)" stroke-width="1"/>
+      <text x="340" y="125" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#22d3ee">Heap  (shared — malloc/free)</text>
+      <rect x="50" y="138" width="280" height="20" rx="2" fill="rgba(251,191,36,0.08)" stroke="rgba(251,191,36,0.18)" stroke-width="1"/>
+      <text x="190" y="152" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#fbbf24">BSS / Data  (globals)</text>
+      <rect x="340" y="138" width="290" height="20" rx="2" fill="rgba(251,191,36,0.06)" stroke="rgba(251,191,36,0.12)" stroke-width="1"/>
+      <text x="485" y="152" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#fbbf24">Text  (.code — shared)</text>
+    </svg>
+  </div>
+</section>
+
+<!-- ══ 03 — THREAD CREATION ════════════════════════════ -->
+<section id="creation">
+  <div class="sec-label">03</div>
+  <h2>Thread creation</h2>
+
+  <p>POSIX threads are created with <code>pthread_create()</code>. You pass it a function pointer — the <strong>thread routine</strong> — and the thread begins executing that function concurrently.</p>
+
+  <div class="fn-card" style="margin-bottom:1.25rem">
+    <div class="fn-top">
+      <div class="fn-name">pthread_create</div>
+      <span class="badge b-blue">creation</span>
+    </div>
+    <div class="fn-sig">int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start)(void *), void *arg)</div>
+    <div class="fn-body">
+      <p style="margin:0">Creates a new thread. The new thread starts executing <code>start(arg)</code> immediately (subject to the scheduler). The calling thread continues without waiting.</p>
+      <br>
+      <p style="margin:0"><code>thread</code> — output: the OS fills in the thread ID here.<br>
+      <code>attr</code> — thread attributes (stack size, detach state…). Pass <code>NULL</code> for defaults.<br>
+      <code>start</code> — the function the new thread runs. Must have signature <code>void *(void *)</code>.<br>
+      <code>arg</code> — a single pointer passed to <code>start</code>. Cast to whatever you need.</p>
+    </div>
+    <div class="fn-ret">Returns <span>0</span> on success · <span>errno code</span> on failure (EAGAIN, ENOMEM, EINVAL…)</div>
+  </div>
+
+  <div class="code-block">
+    <div class="code-header"><span>basic_thread.c</span><span class="lang">C</span></div>
+    <pre><code><span class="pp">#include</span> <span class="str">&lt;pthread.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="cm">// Thread routine — must match void *(void *) signature</span>
+<span class="ty">void</span>    *<span class="fn">thread_routine</span>(<span class="ty">void</span> *arg)
+{
+    <span class="ty">int</span>  id = *(<span class="ty">int</span> *)arg;  <span class="cm">// cast the generic pointer back</span>
+    printf(<span class="str">"[Thread %d] running\n"</span>, id);
+    <span class="kw">return</span> (NULL);
+}
+
+<span class="ty">int</span>     <span class="fn">main</span>(<span class="ty">void</span>)
+{
+    <span class="ty">pthread_t</span>  tid;
+    <span class="ty">int</span>        id = <span class="num">42</span>;
+
+    <span class="cm">// Create the thread — starts immediately</span>
+    <span class="kw">if</span> (<span class="fn">pthread_create</span>(&amp;tid, NULL, thread_routine, &amp;id) != <span class="num">0</span>)
+    {
+        perror(<span class="str">"pthread_create"</span>);
+        <span class="kw">return</span> (<span class="num">1</span>);
+    }
+
+    <span class="cm">// Wait for thread to finish before exiting</span>
+    <span class="fn">pthread_join</span>(tid, NULL);
+    printf(<span class="str">"[Main] done\n"</span>);
+    <span class="kw">return</span> (<span class="num">0</span>);
+}</code></pre>
+  </div>
+
+  <div class="callout callout-amber">
+    <strong>The <code>void *</code> trick.</strong> Because <code>pthread_create</code> accepts only one argument to the thread function, you typically pass a pointer to a struct that contains all the data the thread needs. Always make sure that memory outlives the thread — never pass a pointer to a stack variable that might be freed before the thread uses it.
+  </div>
+
+  <div class="grid-2" style="margin-top:1rem">
+    <div class="fn-card">
+      <div class="fn-top">
+        <div class="fn-name">pthread_join</div>
+        <span class="badge b-green">blocking wait</span>
+      </div>
+      <div class="fn-sig">int pthread_join(pthread_t thread, void **retval)</div>
+      <div class="fn-body">Blocks the calling thread until <code>thread</code> finishes. Reclaims its resources. <code>retval</code> receives the value returned by the thread routine (pass <code>NULL</code> to ignore).</div>
+      <div class="fn-ret">Returns <span>0</span> on success</div>
+    </div>
+    <div class="fn-card">
+      <div class="fn-top">
+        <div class="fn-name">pthread_detach</div>
+        <span class="badge b-gray">fire &amp; forget</span>
+      </div>
+      <div class="fn-sig">int pthread_detach(pthread_t thread)</div>
+      <div class="fn-body">Marks the thread as <em>detached</em> — its resources are released automatically when it finishes. You can no longer <code>join</code> it. Use when you don't need the return value and don't want to track the thread.</div>
+      <div class="fn-ret">Returns <span>0</span> on success</div>
+    </div>
+  </div>
+
+  <div class="callout callout-red">
+    <strong>Always join or detach every thread.</strong> A thread that is neither joined nor detached is a <em>zombie thread</em> — its resources are never freed. If your process creates many threads without joining them, you'll leak memory and eventually hit the system thread limit.
+  </div>
+</section>
+
+<!-- ══ 04 — LIFECYCLE ══════════════════════════════════ -->
+<section id="lifecycle">
+  <div class="sec-label">04</div>
+  <h2>Thread lifecycle</h2>
+
+  <div class="thread-diagram">
+    <svg viewBox="0 0 700 140" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- States -->
+      <rect x="20"  y="50" width="110" height="40" rx="3" fill="rgba(96,165,250,0.1)"  stroke="rgba(96,165,250,0.35)"  stroke-width="1"/>
+      <text x="75"  y="75" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="12" fill="#60a5fa">NEW</text>
+
+      <rect x="180" y="50" width="110" height="40" rx="3" fill="rgba(74,222,128,0.09)" stroke="rgba(74,222,128,0.3)"  stroke-width="1"/>
+      <text x="235" y="75" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="12" fill="#4ade80">RUNNABLE</text>
+
+      <rect x="340" y="50" width="110" height="40" rx="3" fill="rgba(192,132,252,0.09)" stroke="rgba(192,132,252,0.3)" stroke-width="1"/>
+      <text x="395" y="75" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="12" fill="#c084fc">RUNNING</text>
+
+      <rect x="500" y="10" width="110" height="40" rx="3" fill="rgba(251,191,36,0.08)" stroke="rgba(251,191,36,0.25)" stroke-width="1"/>
+      <text x="555" y="35" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="12" fill="#fbbf24">BLOCKED</text>
+
+      <rect x="500" y="90" width="110" height="40" rx="3" fill="rgba(248,113,113,0.08)" stroke="rgba(248,113,113,0.25)" stroke-width="1"/>
+      <text x="555" y="115" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="12" fill="#f87171">TERMINATED</text>
+
+      <!-- Arrows -->
+      <line x1="130" y1="70" x2="178" y2="70" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+      <polygon points="178,67 186,70 178,73" fill="rgba(255,255,255,0.2)"/>
+      <text x="154" y="63" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(255,255,255,0.3)">create</text>
+
+      <line x1="290" y1="70" x2="338" y2="70" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+      <polygon points="338,67 346,70 338,73" fill="rgba(255,255,255,0.2)"/>
+      <text x="314" y="63" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(255,255,255,0.3)">schedule</text>
+
+      <line x1="346" y1="70" x2="292" y2="70" stroke="rgba(255,255,255,0.1)" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="314" y="85" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(255,255,255,0.2)">preempt</text>
+
+      <line x1="450" y1="55" x2="498" y2="35" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <polygon points="495,31 503,34 497,40" fill="rgba(255,255,255,0.18)"/>
+      <text x="470" y="38" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(255,255,255,0.25)">lock/wait</text>
+
+      <line x1="500" y1="42" x2="452" y2="62" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <text x="462" y="58" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(255,255,255,0.25)">unlock</text>
+
+      <line x1="450" y1="85" x2="498" y2="105" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <polygon points="495,101 503,108 498,112" fill="rgba(255,255,255,0.18)"/>
+      <text x="468" y="100" font-family="IBM Plex Mono,monospace" font-size="9" fill="rgba(255,255,255,0.25)">return/exit</text>
+    </svg>
+  </div>
+
+  <div class="grid-3">
+    <div class="card">
+      <h3 style="color:var(--blue)">NEW</h3>
+      <p><code>pthread_create()</code> was called. The kernel has created the task but the scheduler hasn't given it CPU time yet.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--green)">RUNNABLE</h3>
+      <p>Ready to run, waiting for the scheduler to assign it a CPU core. May bounce between runnable and running many times.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--purple)">RUNNING</h3>
+      <p>Actually executing on a CPU core. The scheduler may preempt it at any moment (end of time slice, higher-priority thread wakes up).</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--amber)">BLOCKED</h3>
+      <p>Waiting for something — a mutex lock, a condition variable, I/O completion. Not using any CPU. Woken up by the event it's waiting for.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--red)">TERMINATED</h3>
+      <p>The thread routine returned or <code>pthread_exit()</code> was called. Resources are freed only after <code>pthread_join()</code> or if it was detached.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 05 — RACE CONDITIONS ════════════════════════════ -->
+<section id="race">
+  <div class="sec-label">05</div>
+  <h2>Race conditions</h2>
+
+  <p>A race condition happens when two or more threads access <strong>shared mutable data</strong> concurrently, and the result depends on the exact timing of their execution. The result is <em>undefined behavior</em> — sometimes it looks correct, which makes bugs nearly impossible to reproduce.</p>
+
+  <div class="code-block">
+    <div class="code-header"><span>race_example.c — BROKEN</span><span class="lang">C</span></div>
+    <pre><code><span class="ty">int</span>  counter = <span class="num">0</span>;  <span class="cm">// shared global</span>
+
+<span class="ty">void</span>  *<span class="fn">increment</span>(<span class="ty">void</span> *arg)
+{
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; <span class="num">1000000</span>; i++)
+        counter++;  <span class="cm">// NOT atomic — this is 3 CPU instructions!</span>
+    <span class="kw">return</span> (NULL);
+}
+<span class="cm">// Expected: counter == 2000000</span>
+<span class="cm">// Actual:   counter == 1387234  ← different every run</span></code></pre>
+  </div>
+
+  <div class="callout callout-red">
+    <strong><code>counter++</code> is NOT atomic.</strong> At the machine level it compiles to three instructions: LOAD (read counter into register), ADD (increment register), STORE (write back). The scheduler can interrupt between any of these, causing lost updates.
+  </div>
+
+  <h3 style="margin-top:1.5rem">What "lost update" looks like</h3>
+  <div class="race-grid">
+    <div class="race-card race-danger">
+      <div class="rh">⚠  Without mutex — race condition</div>
+      <div class="race-body">
+        <div class="timeline-row"><span class="t-label">counter=5</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t1">LOAD  → reg=5</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 2</span><span class="t-step t2">LOAD  → reg=5</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t1">ADD   → reg=6</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t1">STORE → counter=6</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 2</span><span class="t-step t2">ADD   → reg=6</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 2</span><span class="t-step t-conflict">STORE → counter=6 ✗</span></div>
+        <div class="timeline-row"><span class="t-label" style="color:var(--red)">Lost one increment — should be 7</span></div>
+      </div>
+    </div>
+    <div class="race-card race-safe">
+      <div class="rh">✓  With mutex — safe</div>
+      <div class="race-body">
+        <div class="timeline-row"><span class="t-label">counter=5</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t-locked">LOCK mutex</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t1">LOAD  → reg=5</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t1">ADD   → reg=6</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t1">STORE → counter=6</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 1</span><span class="t-step t-locked">UNLOCK mutex</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 2</span><span class="t-step t-locked">LOCK mutex</span></div>
+        <div class="timeline-row"><span class="t-label">Thread 2</span><span class="t-step t-safe">LOAD → 6, STORE → 7 ✓</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 06 — MUTEXES ════════════════════════════════════ -->
+<section id="mutex">
+  <div class="sec-label">06</div>
+  <h2>Mutexes</h2>
+
+  <p>A <strong>mutex</strong> (mutual exclusion lock) is the primary tool for protecting shared data. Only one thread can hold a mutex at a time. Any other thread that tries to lock it will <strong>block</strong> until the holder unlocks it.</p>
+
+  <div class="card card-blue" style="margin-bottom:1.25rem">
+    <h3>Under the hood — how a mutex works</h3>
+    <p>A mutex is essentially an atomic flag in memory. The CPU provides atomic test-and-set instructions (like <code>CMPXCHG</code> on x86) that can check and set a value in a single, uninterruptible operation. When you call <code>pthread_mutex_lock()</code>:</p>
+    <div class="flow">
+      <span class="fs fs-blue">try atomic set</span>
+      <span class="fa">→</span>
+      <span class="fs fs-green">if free: lock it · continue</span>
+      <span class="fa">→</span>
+      <span class="fs fs-amber">if taken: spin briefly</span>
+      <span class="fa">→</span>
+      <span class="fs fs-red">then: syscall · block · sleep</span>
+      <span class="fa">→</span>
+      <span class="fs fs-purple">wake on unlock</span>
+    </div>
+    <p style="margin-top:1rem">Modern mutexes are <em>futexes</em> (fast userspace mutexes) on Linux. They avoid the expensive kernel syscall in the uncontested case — the lock/unlock is just an atomic memory operation when no other thread is waiting.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="fn-card">
+      <div class="fn-top">
+        <div class="fn-name">pthread_mutex_init</div>
+        <span class="badge b-blue">init</span>
+      </div>
+      <div class="fn-sig">int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr)</div>
+      <div class="fn-body">Initializes a mutex. Pass <code>NULL</code> for <code>attr</code> to get a default (fast, non-recursive) mutex. Alternatively, use the static initializer <code>PTHREAD_MUTEX_INITIALIZER</code> for global mutexes.</div>
+      <div class="fn-ret">Returns <span>0</span> on success</div>
+    </div>
+    <div class="fn-card">
+      <div class="fn-top">
+        <div class="fn-name">pthread_mutex_destroy</div>
+        <span class="badge b-red">cleanup</span>
+      </div>
+      <div class="fn-sig">int pthread_mutex_destroy(pthread_mutex_t *mutex)</div>
+      <div class="fn-body">Releases resources held by the mutex. Must be called when the mutex is no longer needed. The mutex must be <strong>unlocked</strong> before destroying it, otherwise behavior is undefined.</div>
+      <div class="fn-ret">Returns <span>0</span> on success</div>
+    </div>
+    <div class="fn-card">
+      <div class="fn-top">
+        <div class="fn-name">pthread_mutex_lock</div>
+        <span class="badge b-amber">blocking lock</span>
+      </div>
+      <div class="fn-sig">int pthread_mutex_lock(pthread_mutex_t *mutex)</div>
+      <div class="fn-body">Acquires the mutex. If the mutex is already locked by another thread, the calling thread <strong>blocks</strong> (sleeps) until it becomes available. A thread must never lock a mutex it already holds — that's a deadlock.</div>
+      <div class="fn-ret">Returns <span>0</span> on success</div>
+    </div>
+    <div class="fn-card">
+      <div class="fn-top">
+        <div class="fn-name">pthread_mutex_unlock</div>
+        <span class="badge b-green">release</span>
+      </div>
+      <div class="fn-sig">int pthread_mutex_unlock(pthread_mutex_t *mutex)</div>
+      <div class="fn-body">Releases the mutex. If other threads are blocked waiting for it, one of them is woken up and given the lock. Only the thread that locked the mutex should unlock it.</div>
+      <div class="fn-ret">Returns <span>0</span> on success</div>
+    </div>
+    <div class="fn-card">
+      <div class="fn-top">
+        <div class="fn-name">pthread_mutex_trylock</div>
+        <span class="badge b-purple">non-blocking</span>
+      </div>
+      <div class="fn-sig">int pthread_mutex_trylock(pthread_mutex_t *mutex)</div>
+      <div class="fn-body">Tries to acquire the mutex <strong>without blocking</strong>. If the mutex is locked, it returns immediately with <code>EBUSY</code> instead of sleeping. Useful to avoid deadlocks or to do other work while waiting.</div>
+      <div class="fn-ret">Returns <span>0</span> if locked · <span>EBUSY</span> if taken</div>
+    </div>
+  </div>
+
+  <div class="code-block" style="margin-top:1.5rem">
+    <div class="code-header"><span>mutex_example.c — fixed race condition</span><span class="lang">C</span></div>
+    <pre><code><span class="pp">#include</span> <span class="str">&lt;pthread.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="ty">int</span>             counter = <span class="num">0</span>;
+<span class="ty">pthread_mutex_t</span> lock;     <span class="cm">// the mutex — one per shared resource</span>
+
+<span class="ty">void</span>  *<span class="fn">increment</span>(<span class="ty">void</span> *arg)
+{
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; <span class="num">1000000</span>; i++)
+    {
+        <span class="fn">pthread_mutex_lock</span>(&amp;lock);    <span class="cm">// ← enter critical section</span>
+        counter++;                      <span class="cm">// safe: only one thread here at a time</span>
+        <span class="fn">pthread_mutex_unlock</span>(&amp;lock);  <span class="cm">// ← exit critical section</span>
+    }
+    <span class="kw">return</span> (NULL);
+}
+
+<span class="ty">int</span>   <span class="fn">main</span>(<span class="ty">void</span>)
+{
+    <span class="ty">pthread_t</span>  t1, t2;
+
+    <span class="fn">pthread_mutex_init</span>(&amp;lock, NULL);  <span class="cm">// initialize before any thread uses it</span>
+
+    <span class="fn">pthread_create</span>(&amp;t1, NULL, increment, NULL);
+    <span class="fn">pthread_create</span>(&amp;t2, NULL, increment, NULL);
+
+    <span class="fn">pthread_join</span>(t1, NULL);
+    <span class="fn">pthread_join</span>(t2, NULL);
+
+    printf(<span class="str">"counter = %d\n"</span>, counter);  <span class="cm">// always 2000000</span>
+
+    <span class="fn">pthread_mutex_destroy</span>(&amp;lock);     <span class="cm">// clean up</span>
+    <span class="kw">return</span> (<span class="num">0</span>);
+}</code></pre>
+  </div>
+
+  <h3 style="margin-top:1.5rem">Deadlocks</h3>
+  <p>A <strong>deadlock</strong> occurs when two or more threads are each waiting for a lock held by the other — they all block forever. Classic example:</p>
+
+  <div class="race-grid">
+    <div class="race-card race-danger">
+      <div class="rh">⚠  Deadlock scenario</div>
+      <div class="race-body" style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.8">
+        <div>Thread 1: lock(A) → tries lock(B) → 🔴 blocked</div>
+        <div>Thread 2: lock(B) → tries lock(A) → 🔴 blocked</div>
+        <div style="margin-top:8px;color:var(--red)">Neither can proceed. Forever.</div>
+      </div>
+    </div>
+    <div class="race-card race-safe">
+      <div class="rh">✓  Prevention: consistent order</div>
+      <div class="race-body" style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.8">
+        <div>Thread 1: lock(A) → lock(B) → unlock(B) → unlock(A)</div>
+        <div>Thread 2: lock(A) → lock(B) → unlock(B) → unlock(A)</div>
+        <div style="margin-top:8px;color:var(--green)">Always lock in the same order.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-purple" style="margin-top:1rem">
+    <strong>Rules to avoid deadlocks:</strong> always acquire multiple locks in the same global order · keep critical sections as short as possible · never call unknown functions while holding a lock · consider using <code>pthread_mutex_trylock</code> with backoff for complex scenarios.
+  </div>
+</section>
+
+<!-- ══ 07 — FUNCTION REFERENCE ═════════════════════════ -->
+<section id="fn-ref">
+  <div class="sec-label">07</div>
+  <h2>Complete function reference</h2>
+
+  <table class="tbl">
+    <thead>
+      <tr><th>Function</th><th>Returns</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="tc-fn">pthread_create()</td>
+        <td class="tc-ret">0 / errno</td>
+        <td>Creates a new thread running a given function</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_join()</td>
+        <td class="tc-ret">0 / errno</td>
+        <td>Waits for a thread to finish and reclaims its resources</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_detach()</td>
+        <td class="tc-ret">0 / errno</td>
+        <td>Auto-releases resources when thread finishes (no join needed)</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_exit()</td>
+        <td class="tc-ret">—</td>
+        <td>Terminates the calling thread with a return value</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_self()</td>
+        <td class="tc-ret">pthread_t</td>
+        <td>Returns the ID of the calling thread</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_equal()</td>
+        <td class="tc-ret">0 / non-zero</td>
+        <td>Compares two thread IDs (don't use == directly)</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_mutex_init()</td>
+        <td class="tc-ret">0 / errno</td>
+        <td>Initializes a mutex with optional attributes</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_mutex_destroy()</td>
+        <td class="tc-ret">0 / errno</td>
+        <td>Releases mutex resources (must be unlocked first)</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_mutex_lock()</td>
+        <td class="tc-ret">0 / errno</td>
+        <td>Acquires mutex — blocks if already held</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_mutex_unlock()</td>
+        <td class="tc-ret">0 / errno</td>
+        <td>Releases mutex — wakes up waiting threads</td>
+      </tr>
+      <tr>
+        <td class="tc-fn">pthread_mutex_trylock()</td>
+        <td class="tc-ret">0 / EBUSY</td>
+        <td>Tries to lock — returns immediately if mutex is taken</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ══ 08 — PATTERNS ══════════════════════════════════ -->
+<section id="patterns">
+  <div class="sec-label">08</div>
+  <h2>Common patterns</h2>
+
+  <h3>Pattern 1 — Passing data to a thread via struct</h3>
+  <div class="code-block">
+    <div class="code-header"><span>thread_args.c</span><span class="lang">C</span></div>
+    <pre><code><span class="kw">typedef struct</span> <span class="ty">s_args</span> {
+    <span class="ty">int</span>     id;
+    <span class="ty">int</span>     *shared_counter;
+    <span class="ty">pthread_mutex_t</span> *lock;
+} <span class="ty">t_args</span>;
+
+<span class="ty">void</span>  *<span class="fn">worker</span>(<span class="ty">void</span> *arg)
+{
+    <span class="ty">t_args</span>  *a = (<span class="ty">t_args</span> *)arg;
+
+    <span class="fn">pthread_mutex_lock</span>(a->lock);
+    (*a->shared_counter)++;
+    printf(<span class="str">"Thread %d incremented counter to %d\n"</span>, a->id, *a->shared_counter);
+    <span class="fn">pthread_mutex_unlock</span>(a->lock);
+    <span class="kw">return</span> (NULL);
+}
+
+<span class="ty">int</span>   <span class="fn">main</span>(<span class="ty">void</span>)
+{
+    <span class="ty">pthread_t</span>       threads[<span class="num">4</span>];
+    <span class="ty">t_args</span>          args[<span class="num">4</span>];
+    <span class="ty">pthread_mutex_t</span> lock;
+    <span class="ty">int</span>             counter = <span class="num">0</span>;
+
+    <span class="fn">pthread_mutex_init</span>(&amp;lock, NULL);
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; <span class="num">4</span>; i++) {
+        args[i] = (<span class="ty">t_args</span>){i, &amp;counter, &amp;lock};
+        <span class="fn">pthread_create</span>(&amp;threads[i], NULL, worker, &amp;args[i]);
+    }
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; <span class="num">4</span>; i++)
+        <span class="fn">pthread_join</span>(threads[i], NULL);
+    <span class="fn">pthread_mutex_destroy</span>(&amp;lock);
+    <span class="kw">return</span> (<span class="num">0</span>);
+}</code></pre>
+  </div>
+
+  <h3 style="margin-top:1.5rem">Pattern 2 — Thread pool (create once, reuse)</h3>
+  <div class="callout callout-cyan">
+    Creating and destroying threads has overhead. For repeated short tasks, create a fixed pool of threads once, feed them work via a shared queue (protected by a mutex), and keep them alive for the program's lifetime. This avoids repeated <code>pthread_create</code> costs.
+  </div>
+
+  <h3 style="margin-top:1.5rem">Compile &amp; link</h3>
+  <div class="code-block">
+    <div class="code-header"><span>terminal</span><span class="lang">bash</span></div>
+    <pre><code>gcc -Wall -Wextra -pthread your_file.c -o your_program
+<span class="cm"># -pthread sets the right defines AND links libpthread</span>
+<span class="cm"># On some systems: -lpthread instead of -pthread</span></code></pre>
+  </div>
+</section>
+
+<!-- ══ 09 — FULL CODE ══════════════════════════════════ -->
+<section id="full-code">
+  <div class="sec-label">09</div>
+  <h2>Full example — threads + mutex</h2>
+
+  <div class="code-block">
+    <div class="code-header"><span>threads_full.c</span><span class="lang">C</span></div>
+    <pre><code><span class="pp">#include</span> <span class="str">&lt;pthread.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdlib.h&gt;</span>
+
+<span class="pp">#define</span> NUM_THREADS  <span class="num">5</span>
+<span class="pp">#define</span> INCREMENTS   <span class="num">100000</span>
+
+<span class="cm">/* ── Shared state ──────────────────────────────── */</span>
+<span class="kw">typedef struct</span> <span class="ty">s_shared</span> {
+    <span class="ty">int</span>             counter;
+    <span class="ty">pthread_mutex_t</span> lock;
+} <span class="ty">t_shared</span>;
+
+<span class="cm">/* ── Thread argument ───────────────────────────── */</span>
+<span class="kw">typedef struct</span> <span class="ty">s_args</span> {
+    <span class="ty">int</span>         id;
+    <span class="ty">t_shared</span>    *shared;
+} <span class="ty">t_args</span>;
+
+<span class="cm">/* ── Thread routine ────────────────────────────── */</span>
+<span class="ty">void</span>  *<span class="fn">worker</span>(<span class="ty">void</span> *arg)
+{
+    <span class="ty">t_args</span>  *a = (<span class="ty">t_args</span> *)arg;
+
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; INCREMENTS; i++)
+    {
+        <span class="fn">pthread_mutex_lock</span>(&amp;a->shared->lock);
+        a->shared->counter++;
+        <span class="fn">pthread_mutex_unlock</span>(&amp;a->shared->lock);
+    }
+    printf(<span class="str">"[Thread %d] done\n"</span>, a->id);
+    <span class="kw">return</span> (NULL);
+}
+
+<span class="cm">/* ── Main ──────────────────────────────────────── */</span>
+<span class="ty">int</span>   <span class="fn">main</span>(<span class="ty">void</span>)
+{
+    <span class="ty">pthread_t</span>  threads[NUM_THREADS];
+    <span class="ty">t_args</span>     args[NUM_THREADS];
+    <span class="ty">t_shared</span>   shared;
+
+    <span class="cm">// Init shared state</span>
+    shared.counter = <span class="num">0</span>;
+    <span class="fn">pthread_mutex_init</span>(&amp;shared.lock, NULL);
+
+    <span class="cm">// Launch all threads</span>
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; NUM_THREADS; i++)
+    {
+        args[i].id     = i;
+        args[i].shared = &amp;shared;
+        <span class="kw">if</span> (<span class="fn">pthread_create</span>(&amp;threads[i], NULL, worker, &amp;args[i]) != <span class="num">0</span>)
+        {
+            perror(<span class="str">"pthread_create"</span>);
+            <span class="kw">return</span> (<span class="num">1</span>);
+        }
+    }
+
+    <span class="cm">// Wait for all threads to finish</span>
+    <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; NUM_THREADS; i++)
+        <span class="fn">pthread_join</span>(threads[i], NULL);
+
+    printf(<span class="str">"Final counter: %d (expected %d)\n"</span>,
+        shared.counter, NUM_THREADS * INCREMENTS);
+
+    <span class="fn">pthread_mutex_destroy</span>(&amp;shared.lock);
+    <span class="kw">return</span> (<span class="num">0</span>);
+}</code></pre>
+  </div>
+</section>
+
+<footer>
+  <p>threads in C · POSIX pthreads · session resource</p>
+  <p style="color:var(--blue)">−lpthread · clone() · futex</p>
+</footer>
+
+</div>
+</body>
+</html>
