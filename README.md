@@ -4,8 +4,12 @@ Practical guide to `pthread` basics plus **under-the-hood behavior** (scheduler,
 
 ## Open the guide
 
+<<<<<<< HEAD
 - `threads-in-c.html` — full visual resource page
 - `README.md` — compact text reference
+=======
+🔗 **[View the full resource page →](https://nait-sfi.github.io/Threads-in-C-POSIX-pthreads)**
+>>>>>>> 874aad398b31204621ceb10b6a1770507d90e1cc
 
 ## Core model
 
