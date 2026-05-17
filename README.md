@@ -4,7 +4,7 @@
 
 A detailed reference on **POSIX threads** (`pthreads`) in C — covering what threads are, how they work under the hood at the OS level, how to create them, and how to protect shared data with mutexes.
 
-🔗 **[View the full resource page →](https://nait-sfi.github.io/threads-in-c)**
+🔗 **[View the full resource page →](https://nait-sfi.github.io/Threads-in-C-POSIX-pthreads)**
 
 ---
 
